@@ -65,7 +65,7 @@ start_docker() {
     server_args="${server_args} -g=$3"
   fi
 
-  docker daemon ${server_args} >/tmp/docker.log 2>&1 &
+  docker daemon ${server_args} --graph=/scratch/docker >/tmp/docker.log 2>&1 &
   echo $! > /tmp/docker.pid
 
   trap stop_docker EXIT
