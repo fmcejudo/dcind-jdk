@@ -1,33 +1,52 @@
 # Inspired by https://github.com/mumoshu/dcind
 FROM maven:3.6.0-jdk-12-alpine 
-MAINTAINER Toshiaki Maki <tmaki@pivotal.io> \
-           Francisco Miguel Cejudo <fmcejudo@gmail.com>
+MAINTAINER Francisco Miguel Cejudo <fmcejudo@gmail.com>
 
-ENV DOCKER_VERSION=1.12.1 \
-    DOCKER_COMPOSE_VERSION=1.8
+RUN apk add --no-cache \
+		ca-certificates
 
- 
-# Install Docker and Docker Compose
-RUN apk --update --no-cache \
-    add curl device-mapper py-pip iptables && \
-    rm -rf /var/cache/apk/* && \
-    curl https://get.docker.com/builds/Linux/x86_64/docker-${DOCKER_VERSION}.tgz | tar zx && \
-    mv /docker/* /bin/ && chmod +x /bin/docker* && \
-    pip install docker-compose==${DOCKER_COMPOSE_VERSION}
+# set up nsswitch.conf for Go's "netgo" implementation (which Docker explicitly uses)
+# - https://github.com/docker/docker-ce/blob/v17.09.0-ce/components/engine/hack/make.sh#L149
+# - https://github.com/golang/go/blob/go1.9.1/src/net/conf.go#L194-L275
+# - docker run --rm debian:stretch grep '^hosts:' /etc/nsswitch.conf
+RUN [ ! -e /etc/nsswitch.conf ] && echo 'hosts: files dns' > /etc/nsswitch.conf
 
-# Install entrykit
-RUN curl -L https://github.com/progrium/entrykit/releases/download/v0.4.0/entrykit_0.4.0_Linux_x86_64.tgz | tar zx && \
-    chmod +x entrykit && \
-    mv entrykit /bin/entrykit && \
-    entrykit --symlink
+ENV DOCKER_CHANNEL stable
+ENV DOCKER_VERSION 18.09.4
+# TODO ENV DOCKER_SHA256
+# https://github.com/docker/docker-ce/blob/5b073ee2cf564edee5adca05eee574142f7627bb/components/packaging/static/hash_files !!
+# (no SHA file artifacts on download.docker.com yet as of 2017-06-07 though)
 
-# Include useful functions to start/stop docker daemon in garden-runc containers in Concourse CI.
-# Example: source /docker-lib.sh && start_docker
-COPY docker-lib.sh /docker-lib.sh
+RUN set -eux; \
+	\
+# this "case" statement is generated via "update.sh"
+	apkArch="$(apk --print-arch)"; \
+	case "$apkArch" in \
+		x86_64) dockerArch='x86_64' ;; \
+		armhf) dockerArch='armel' ;; \
+		aarch64) dockerArch='aarch64' ;; \
+		ppc64le) dockerArch='ppc64le' ;; \
+		s390x) dockerArch='s390x' ;; \
+		*) echo >&2 "error: unsupported architecture ($apkArch)"; exit 1 ;;\
+	esac; \
+	\
+	if ! wget -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/${dockerArch}/docker-${DOCKER_VERSION}.tgz"; then \
+		echo >&2 "error: failed to download 'docker-${DOCKER_VERSION}' from '${DOCKER_CHANNEL}' for '${dockerArch}'"; \
+		exit 1; \
+	fi; \
+	\
+	tar --extract \
+		--file docker.tgz \
+		--strip-components 1 \
+		--directory /usr/local/bin/ \
+	; \
+	rm docker.tgz; \
+	\
+	dockerd --version; \
+	docker --version
 
-ENTRYPOINT [ \
-	"switch", \
-		"shell=/bin/sh", "--", \
-	"codep", \
-		"/bin/docker daemon" \
-]
+COPY modprobe.sh /usr/local/bin/modprobe
+COPY docker-entrypoint.sh /usr/local/bin/
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["sh"]
