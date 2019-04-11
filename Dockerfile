@@ -2,6 +2,7 @@
 FROM maven:3.6.0-jdk-12-alpine 
 MAINTAINER Francisco Miguel Cejudo <fmcejudo@gmail.com>
 
+USER root
 RUN apk add --no-cache \
 		ca-certificates
 
@@ -47,6 +48,8 @@ RUN set -eux; \
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY docker-entrypoint.sh /usr/local/bin/
+VOLUME /var/run/docker.sock /var/run/docker.sock
+RUN chmod 755 /var/run/docker.sock 
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["sh"]
