@@ -2,25 +2,24 @@
 FROM maven:3.6.0-jdk-12-alpine 
 MAINTAINER Francisco Miguel Cejudo <fmcejudo@gmail.com>
 
-USER root
-RUN apk add --no-cache shadow \
-		ca-certificates
+ENV DOCKER_VERSION=1.11.1 \
+    DOCKER_COMPOSE_VERSION=1.7.1
 
-# set up nsswitch.conf for Go's "netgo" implementation (which Docker explicitly uses)
-# - https://github.com/docker/docker-ce/blob/v17.09.0-ce/components/engine/hack/make.sh#L149
-# - https://github.com/golang/go/blob/go1.9.1/src/net/conf.go#L194-L275
-# - docker run --rm debian:stretch grep '^hosts:' /etc/nsswitch.conf
-RUN [ ! -e /etc/nsswitch.conf ] && echo 'hosts: files dns' > /etc/nsswitch.conf
+# Install Docker, Docker Compose
+RUN apk --update --no-cache \
+        add curl device-mapper mkinitfs zsh e2fsprogs e2fsprogs-extra iptables && \
+        curl https://get.docker.com/builds/Linux/x86_64/docker-${DOCKER_VERSION}.tgz | tar zx && \
+        mv /docker/* /bin/ && chmod +x /bin/docker* \
+    && \
+        apk add py-pip && \
+        pip install docker-compose==${DOCKER_COMPOSE_VERSION}
 
-ENV DOCKER_CHANNEL stable
-ENV DOCKER_VERSION 18.09.4
-# TODO ENV DOCKER_SHA256
-# https://github.com/docker/docker-ce/blob/5b073ee2cf564edee5adca05eee574142f7627bb/components/packaging/static/hash_files !!
-# (no SHA file artifacts on download.docker.com yet as of 2017-06-07 though)
+COPY ./entrykit /bin/entrykit
 
-COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /bin/entrykit && entrykit --symlink
 
-EXPOSE 2375 
+# Include useful functions to start/stop docker daemon in garden-runc containers on Concourse CI
+# Its usage would be something like: source /docker.lib.sh && start_docker "" "" "-g=$(pwd)/graph"
+COPY docker-lib.sh /docker-lib.sh
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["sh"]
+ENTRYPOINT ["entrykit", "-e"]
