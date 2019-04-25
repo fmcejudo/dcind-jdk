@@ -6,7 +6,6 @@ sanitize_cgroups() {
   mountpoint -q /sys/fs/cgroup || \
     mount -t tmpfs -o uid=0,gid=0,mode=0755 cgroup /sys/fs/cgroup
 
-  mount -o remount,rw /sys/fs/cgroup
 
   sed -e 1d /proc/cgroups | while read sys hierarchy num enabled; do
     if [ "$enabled" != "1" ]; then
